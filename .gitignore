@@ -1,0 +1,9 @@
+﻿.venv/
+__pycache__/
+*.pyc
+.env
+*.mp3
+*.wav
+output/
+*.faiss
+.DS_Store
