@@ -2,8 +2,15 @@
 __pycache__/
 *.pyc
 .env
-*.mp3
-*.wav
-output/
+outputs/
 *.faiss
 .DS_Store
+
+# Vendored embedding model (downloaded locally, ~470MB — never commit)
+data/models/
+
+# Generated media (TTS replies, recordings) — test samples are committed on purpose
+*.mp3
+*.wav
+!data/test_samples/*.mp3
+!data/test_samples/*.wav
