@@ -11,10 +11,13 @@ dependencies = [
     "groq>=1.7.0",
     "httpx>=0.28.1",
     "numpy>=2.5.5",
+    "opencv-python-headless>=5.1.0.95",
+    "pillow>=13.0.0",
     "pydantic>=2.14.4",
     "python-dotenv>=1.2.4",
     "python-multipart>=0.0.34",
     "rank-bm25>=0.2.2",
+    "rapidfuzz>=3.14.6",
     "sentence-transformers>=6.3.0",
     "uvicorn>=0.54.0",
 ]
