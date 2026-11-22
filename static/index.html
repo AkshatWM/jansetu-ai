@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="hi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0b141a" />
+  <title>JanSetu AI · उत्तर प्रदेश नागरिक सेवा सहायक</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- ------------------------------------------------------------ chat -->
+    <section class="chat-panel" aria-label="नागरिक चैट">
+      <header class="chat-header">
+        <div class="avatar" aria-hidden="true">जे</div>
+        <div class="chat-title">
+          <h1>JanSetu AI <span class="dot" aria-hidden="true"></span></h1>
+          <p>उत्तर प्रदेश नागरिक सेवा सहायक</p>
+        </div>
+        <span class="online" title="ऑनलाइन">ऑनलाइन</span>
+      </header>
+
+      <main id="chat" class="chat" aria-live="polite">
+        <div class="day-chip"><span>आज</span></div>
+
+        <div class="bubble bot welcome">
+          <p>
+            नमस्ते! मैं <strong>जनसेतु AI</strong> हूँ। आप हिंदी, भोजपुरी या अवधी में
+            बोल सकते हैं, लिख सकते हैं या दस्तावेज़ की फोटो भेज सकते हैं।
+          </p>
+          <p class="muted">जैसे — पेंशन, आय प्रमाण पत्र, जाति प्रमाण पत्र, पीएम किसान या शिकायत।</p>
+          <div class="suggestions" role="group" aria-label="उदाहरण प्रश्न">
+            <button type="button" class="chip" data-prompt="मुझे बुढ़ापा पेंशन के लिए आवेदन करना है।">
+              बुढ़ापा पेंशन
+            </button>
+            <button type="button" class="chip" data-prompt="आय प्रमाण पत्र कैसे बनवाऊँ?">
+              आय प्रमाण पत्र
+            </button>
+            <button type="button" class="chip" data-prompt="मुझे जनसुनवाई में शिकायत दर्ज करनी है।">
+              शिकायत दर्ज करें
+            </button>
+          </div>
+          <span class="meta">अभी</span>
+        </div>
+      </main>
+
+      <div id="recordingBar" class="recording-bar" hidden>
+        <span class="rec-dot" aria-hidden="true"></span>
+        <span>रिकॉर्डिंग…</span>
+        <strong id="recordingTime">0:00</strong>
+        <span class="muted">रोकने के लिए माइक दबाएँ</span>
+      </div>
+
+      <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+      <footer class="composer">
+        <button id="attachBtn" type="button" class="icon-btn" title="दस्तावेज़ अपलोड करें"
+                aria-label="दस्तावेज़ अपलोड करें">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16.5 6.5l-7.6 7.6a2.5 2.5 0 003.5 3.5l8.4-8.4a4.5 4.5 0 10-6.4-6.4L5.8 11.4a6.5 6.5 0 009.2 9.2l7.1-7.1"/></svg>
+        </button>
+        <input id="docFile" type="file" accept="image/*" hidden />
+
+        <input id="textInput" type="text" inputmode="text" autocomplete="off"
+               placeholder="अपना संदेश लिखें…" aria-label="अपना संदेश लिखें" />
+
+        <button id="micBtn" type="button" class="icon-btn" title="वॉइस रिकॉर्ड करें"
+                aria-label="वॉइस रिकॉर्ड करें" aria-pressed="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3M9 21h6"/></svg>
+        </button>
+
+        <button id="sendBtn" type="button" class="send-btn" title="भेजें" aria-label="भेजें">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5L21 3l-8.5 18-2.3-7.2L3 11.5z"/></svg>
+        </button>
+      </footer>
+
+      <div class="composer-foot">
+        <label class="doc-type" for="docType">
+          <span>दस्तावेज़</span>
+          <select id="docType" aria-label="दस्तावेज़ का प्रकार">
+            <option value="income_certificate">आय प्रमाण पत्र</option>
+            <option value="aadhaar">आधार कार्ड</option>
+            <option value="bank_passbook">बैंक पासबुक</option>
+            <option value="other">अन्य</option>
+          </select>
+        </label>
+
+        <button id="pdfBtn" type="button" class="pdf-btn" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v3h16v-3"/></svg>
+          Generate &amp; Download Pre-Filled PDF
+        </button>
+      </div>
+    </section>
+
+    <!-- ------------------------------------------------------- inspector -->
+    <aside class="inspector" aria-label="AI पाइपलाइन निरीक्षक">
+      <header class="inspector-header">
+        <div>
+          <span class="eyebrow">Live trace</span>
+          <h2>AI Pipeline Inspector</h2>
+        </div>
+        <div class="inspector-actions">
+          <span id="turnCount" class="pill">0 turns</span>
+          <button id="resetBtn" type="button" class="reset-btn">Reset Demo</button>
+        </div>
+      </header>
+
+      <div class="inspector-body">
+        <section class="card" aria-labelledby="slotsTitle">
+          <div class="card-head">
+            <h3 id="slotsTitle">Extracted FormSlots</h3>
+            <span id="slotCount" class="count">0/0</span>
+          </div>
+          <dl id="slotList" class="slot-list"></dl>
+          <div id="missingWrap" class="missing-wrap"></div>
+        </section>
+
+        <section class="card" aria-labelledby="ragTitle">
+          <div class="card-head">
+            <h3 id="ragTitle">Grounded RAG &amp; Eligibility</h3>
+            <span id="eligBadge" class="badge neutral">—</span>
+          </div>
+          <ul id="reasonList" class="reason-list"></ul>
+          <div id="citationWrap" class="chips"></div>
+          <div id="docsWrap" class="docs"></div>
+        </section>
+
+        <section class="card" aria-labelledby="docTitle">
+          <div class="card-head">
+            <h3 id="docTitle">Document Pre-Check Guard</h3>
+            <span id="docBadge" class="badge neutral">No scan</span>
+          </div>
+          <div id="docBody" class="doc-body empty">
+            अभी कोई दस्तावेज़ जाँचा नहीं गया। पेपरक्लिप दबाकर फोटो भेजें।
+          </div>
+        </section>
+      </div>
+    </aside>
+  </div>
+
+  <script src="/static/app.js" defer></script>
+</body>
+</html>
