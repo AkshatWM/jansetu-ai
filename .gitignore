@@ -2,14 +2,22 @@
 __pycache__/
 *.pyc
 .env
+.env.*
+!.env.example
 outputs/
 *.faiss
+
+# Tool caches / logs
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.log
 .DS_Store
 
 # Vendored embedding model (downloaded locally, ~470MB — never commit)
 data/models/
 
-# Generated media (TTS replies, recordings) — test samples are committed on purpose
+# Generated media (TTS replies, recordings) — test samples in data/ are committed on purpose
 *.mp3
 *.wav
 !data/test_samples/*.mp3

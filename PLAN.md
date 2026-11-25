@@ -6,6 +6,10 @@
 **Submission Deadline:** November 27, 2026  
 **Deliverable:** Working Local PoC + 60–90s Demo Video + Pitch Deck (packed in a `.zip` under 20MB)
 
+> **Implementation status (Nov 25, 2026):** Modules 0–6 are implemented and their CLI
+> self-tests pass. See `README.md` for setup, run commands, API reference, and the
+> per-module verification commands. The checklists below are kept as the original plan.
+
 ---
 
 ## 1. Architecture & Tech Stack
@@ -19,9 +23,9 @@ Lightweight, zero-bundler stack designed for parallel 3-person development, mini
   * **ASR:** Groq (`whisper-large-v3-turbo`) or Sarvam AI (`saaras:v4` with `mode="transcribe"`)
   * **TTS:** `edge-tts` (`hi-IN-SwaraNeural` — free, no API key required)
 * **Grounded RAG:** Hybrid `faiss-cpu` + `rank-bm25` with Reciprocal Rank Fusion (RRF) over 5 curated UP scheme Markdown files
-* **Agentic Core:** Single structured JSON LLM call (dialect normalization + eligibility check + multi-turn slot-filling)
+* **Agentic Core:** Single structured JSON LLM call (dialect normalization + eligibility check + multi-turn slot-filling), with a deterministic offline rule engine
 * **Document Pre-Check Guard:** OpenCV Laplacian blur check + Vision/OCR extraction + `rapidfuzz` name-mismatch guard
-* **PDF Generator:** `reportlab` with bundled `NotoSansDevanagari-Regular.ttf`
+* **PDF Generator:** `fpdf2` + `uharfbuzz` text shaping with a bundled Devanagari TTF (Noto Sans Devanagari in `assets/fonts/`)
 
 ---
 
@@ -48,16 +52,19 @@ jansetu-ai/
 ├── .env                    # Local API keys + MOCK_MODE toggle (never commit)
 ├── .env.example            # Shared template for environment variables
 ├── pyproject.toml          # Managed by uv
+├── requirements.txt        # Pinned pip export of uv.lock
+├── main.py                 # One-command launcher: python main.py
 ├── schemas.py              # Module 0: Shared Pydantic I/O contracts (FROZEN after Day 1)
 ├── data/
 │   ├── schemes/            # 5 clean UP scheme Markdown files [Track A]
 │   │   ├── old_age_pension.md
-│   │   ├── income_cert.md
-│   │   ├── caste_cert.md
+│   │   ├── income_certificate.md
+│   │   ├── caste_certificate.md
 │   │   ├── pm_kisan.md
 │   │   └── jansunwai.md
-│   ├── fonts/              # NotoSansDevanagari-Regular.ttf [Track B]
-│   └── test_samples/       # 1 clear + 1 blurry dummy doc + test audio [Track B]
+│   └── models/             # Optional vendored embedding model (gitignored)
+├── assets/
+│   └── fonts/              # Noto Sans Devanagari + Noto Sans (bundled) [Track B]
 ├── rag/
 │   └── retriever.py        # Module 1: Hybrid FAISS + BM25 search [Track A]
 ├── voice/
@@ -73,7 +80,8 @@ jansetu-ai/
 └── static/                 # Module 6b: Split-screen WhatsApp Chat + AI Inspector [Track C]
     ├── index.html
     ├── style.css
-    └── app.js
+    ├── app.js
+    └── favicon.svg
 ```
 
 ---
@@ -84,10 +92,11 @@ jansetu-ai/
 ```bash
 mkdir jansetu-ai && cd jansetu-ai
 git init
-uv init --python 3.11
+uv init --python 3.13
 uv add fastapi uvicorn python-multipart pydantic python-dotenv \
-       faiss-cpu rank-bm25 sentence-transformers \
-       opencv-python-headless rapidfuzz edge-tts reportlab httpx
+       faiss-cpu rank-bm25 sentence-transformers numpy \
+       opencv-python-headless pillow rapidfuzz edge-tts groq httpx \
+       fpdf2 uharfbuzz
 ```
 
 ### Teammate Onboarding (Clone & Run)
@@ -102,11 +111,12 @@ cp .env.example .env
 ### `.env.example` Template
 ```env
 MOCK_MODE=true
-GROQ_API_KEY=your_key_here
 SARVAM_API_KEY=your_key_here
-LLM_API_KEY=your_key_here
-LLM_BASE_URL=https://api.groq.com/openai/v1
-LLM_MODEL=llama-3.3-70b-versatile
+GROQ_API_KEY=your_key_here
+DEEPSEEK_API_KEY=your_key_here
+GEMINI_API_KEY=your_key_here
+HOST=127.0.0.1
+PORT=8000
 ```
 
 ### Simple Git Rules (Avoid Merge Headaches)
@@ -122,12 +132,14 @@ LLM_MODEL=llama-3.3-70b-versatile
 ### Module 0: Contracts & Seed Setup (`schemas.py`) — *All Members Sync First*
 **Goal:** Lock down strict Pydantic models so every teammate's code plugs together cleanly on integration day.
 
-* [ ] Create `schemas.py` with 5 models:
-  * `FormSlots`: `scheme_type`, `applicant_name`, `father_or_husband_name`, `age`, `district`, `residency_type` (`rural`/`urban`), `annual_income`, `grievance_summary`, `missing_fields: list[str]`
-  * `EligibilityResult`: `is_eligible: bool | None`, `reasons: list[str]`, `citations: list[str]`
-  * `AgentResponse`: `normalized_hindi: str`, `reply_hindi: str`, `slots: FormSlots`, `eligibility: EligibilityResult`, `ready_for_docs: bool`
-  * `DocCheckResult`: `passed: bool`, `is_blurry: bool`, `blur_score: float`, `extracted_name: str | None`, `name_match_score: float | None`, `warning_hindi: str`
-  * `SessionState`: `session_id`, `history: list[dict]`, `slots: FormSlots`, `doc_verified: bool`
+* [ ] Create `schemas.py` with the shared contracts:
+  * `RetrievedChunk`: `source_file`, `section`, `content`, `score`
+  * `CitizenQuery`: `session_id`, `raw_text`, `dialect_hint`
+  * `FormSlots`: `scheme_type`, `applicant_name`, `father_or_husband_name`, `age`, `annual_income_inr`, `district`, `address`, `grievance_summary`, `missing_fields: list[str]`
+  * `EligibilityResult`: `is_eligible: bool | None`, `reasons: list[str]`, `required_documents: list[str]`, `source_citations: list[str]`
+  * `AgentTurnResponse`: `transcript`, `normalized_hindi`, `slots`, `eligibility`, `rag_citations`, `bot_reply_hindi`, `tts_audio_url`, `ready_for_docs`, `ready_for_pdf`
+  * `DocCheckResult`: `document_type`, `is_blurry`, `blur_score`, `extracted_name`, `extracted_income_inr`, `name_match_score`, `is_valid`, `hindi_warning`
+  * `PDFGenerationResponse`: `application_id`, `filename`, `pdf_url`, `slots_snapshot`
 * [ ] Push `schemas.py`, `.gitignore`, `.env.example`, and empty folder stubs to `main`.
 
 ### Module 1: Grounded RAG (`rag/retriever.py`) — *[Track A]*
@@ -136,62 +148,63 @@ LLM_MODEL=llama-3.3-70b-versatile
 * [ ] Write 5 short, accurate Markdown files in `data/schemes/` (UP Old-Age Pension, Income Certificate, Caste Certificate, PM-KISAN, Jansunwai Grievance) with exact income caps, age criteria, and required documents.
 * [ ] Load `.md` files and chunk by `##` headings (attach `source` filename to each chunk).
 * [ ] Build BM25 index (`rank_bm25`) and vector index (`faiss-cpu` with `paraphrase-multilingual-MiniLM-L12-v2`).
-* [ ] Implement `retrieve(query: str, top_k: int = 3) -> list[dict]` combining both rankings via Reciprocal Rank Fusion (RRF).
+* [ ] Implement `retrieve(query: str, top_k: int = 3) -> list[RetrievedChunk]` combining both rankings via Reciprocal Rank Fusion (RRF).
 * [ ] **CLI Verification:** `uv run python -m rag.retriever` with `"बुढ़ापा पेंशन के लिए सालाना आय सीमा क्या है?"` returns the exact UP rural/urban income limit with `old_age_pension.md` cited.
 
 ### Module 2: Voice I/O (`voice/speech.py`) — *[Track B]*
 **Goal:** Convert spoken Hindi/dialect audio to text and synthesize Hindi replies.
 
-* [ ] Implement `transcribe_audio(file_path: str) -> str`:
+* [ ] Implement `transcribe_audio(audio_path: str, session_id: str) -> CitizenQuery`:
   * Support Groq `whisper-large-v3-turbo` or Sarvam `saaras:v4` (`mode="transcribe"`).
   * Respect `MOCK_MODE=true` by returning a realistic Hindi test transcript.
-* [ ] Implement `synthesize_speech(text: str, output_path: str) -> str` using `edge-tts` (`hi-IN-SwaraNeural`).
-* [ ] **CLI Verification:** `uv run python -m voice.speech` transcribes a 5-second test `.wav`/`.webm` and generates `outputs/test_reply.mp3`.
+* [ ] Implement `synthesize_hindi(text: str, output_path: str) -> Path` using `edge-tts` (`hi-IN-SwaraNeural`).
+* [ ] **CLI Verification:** `uv run python -m voice.speech` generates `outputs/test_voice.mp3` and prints the mock-ASR `CitizenQuery`.
 
 ### Module 3: Agentic Slot-Filler & Eligibility Core (`core/agent.py`) — *[Track A]*
 **Goal:** Normalize regional phrasing (Bhojpuri/Awadhi/Hindi), check eligibility via RAG, and fill `FormSlots` across turns.
 
-* [ ] Implement `process_turn(user_text: str, current_slots: FormSlots, history: list[dict]) -> AgentResponse`:
+* [ ] Implement `process_turn(query: CitizenQuery, current_slots: FormSlots | None) -> AgentTurnResponse`:
   * Fetch top-3 RAG chunks via `rag.retriever.retrieve()`.
-  * Make 1 LLM call in strict JSON mode enforcing the `AgentResponse` schema.
+  * Make 1 LLM call in strict JSON mode enforcing the `AgentTurnResponse` schema (offline deterministic rule engine when `MOCK_MODE=true`).
   * Prompt rules: normalize dialect phrasing, never invent eligibility rules outside the RAG context, preserve already-filled slots, ask for only 1–2 missing fields at a time in polite Hindi.
-* [ ] **CLI Verification:** `uv run python -m core.agent` runs a simulated 3-turn Hindi/Awadhi conversation and outputs populated `FormSlots` + citations.
+* [ ] **CLI Verification:** `uv run python -m core.agent` runs a simulated 2-turn Bhojpuri/Hindi conversation and outputs populated `FormSlots` + citations.
 
 ### Module 4: Document Pre-Check Guard (`vision/doc_guard.py`) — *[Track B]*
 **Goal:** Catch blurry photos and name mismatches before form submission.
 
-* [ ] Create 2 dummy test document images in `data/test_samples/` (1 crisp, 1 blurred or name-mismatched).
+* [ ] Generate dummy test document images on demand into `outputs/test_docs/` (1 crisp, 1 blurred, 1 name-mismatched).
 * [ ] **Stage 1 — Local Blur Gate (OpenCV):**
   * Load image in grayscale and compute `blur_score = cv2.Laplacian(gray, cv2.CV_64F).var()`.
-  * If `blur_score < 100.0` (calibrate on sample images), short-circuit immediately with `passed=False` and Hindi warning: *"फोटो धुंधली है, कृपया रोशनी में साफ फोटो खींचकर भेजें।"*
+  * If `blur_score < 100.0` (calibrated on sample images), short-circuit immediately with `is_valid=False` and a Hindi warning.
 * [ ] **Stage 2 — OCR & Name Match Gate:**
-  * Extract applicant name and document type using a Vision LLM API (or local `rapidocr-onnxruntime`).
+  * Extract applicant name and income using Gemini/Groq Vision (deterministic mock in `MOCK_MODE`).
   * Compare extracted name against `FormSlots.applicant_name` using `rapidfuzz.fuzz.token_sort_ratio()`.
-  * If score `< 80`, return `passed=False` with a specific Hindi mismatch warning.
+  * If score `< 80`, return `is_valid=False` with a specific Hindi mismatch warning.
 * [ ] **CLI Verification:** `uv run python -m vision.doc_guard` passes the clear dummy doc and flags the blurry/mismatched one.
 
 ### Module 5: Pre-Filled PDF Generator (`forms/pdf_builder.py`) — *[Track B]*
 **Goal:** Turn verified `FormSlots` into a clean, submission-ready UP e-District draft PDF.
 
-* [ ] Download `NotoSansDevanagari-Regular.ttf` into `data/fonts/` and register it in `reportlab`.
-* [ ] Implement `build_application_pdf(slots: FormSlots, eligibility: EligibilityResult, output_path: str) -> str`.
-* [ ] Layout: Official-style header (*"Uttar Pradesh e-District Application Draft — Generated via JanSetu AI"*), applicant details table, eligibility status + rule citations, and a structured JSON payload footer.
-* [ ] **CLI Verification:** `uv run python -m forms.pdf_builder` outputs `outputs/sample_draft.pdf` with clean Hindi + English text.
+* [ ] Bundle `NotoSansDevanagari-Regular.ttf` + a Latin companion in `assets/fonts/` and register them in `fpdf2` (with `uharfbuzz` text shaping).
+* [ ] Implement `generate_application_pdf(slots: FormSlots, eligibility: EligibilityResult | None, output_dir: str) -> PDFGenerationResponse`.
+* [ ] Layout: Official-style header (*"Uttar Pradesh e-District Application Draft"*), applicant details table, eligibility status + reasons + sources, document checklist, and a companion JSON snapshot.
+* [ ] **CLI Verification:** `uv run python -m forms.pdf_builder` outputs a bilingual draft into `outputs/pdfs/` with clean Hindi + English text.
 
 ### Module 6: FastAPI Server & Split-Screen UI (`server.py` + `static/`) — *[Track C]*
 **Goal:** Single-command web app with a realistic WhatsApp mobile chat on the left and a live "Under the Hood" AI inspector on the right.
 
 * [ ] **`server.py` (FastAPI):**
-  * In-memory `SESSIONS: dict[str, SessionState]` store.
+  * In-memory per-session `SessionState` store with a lock.
   * `POST /api/voice` — accepts audio blob (or text fallback), runs ASR → Agent → TTS, returns JSON + audio URL.
-  * `POST /api/check-doc` — accepts image upload, runs `doc_guard`, returns `DocCheckResult` + TTS warning URL.
-  * `POST /api/generate-pdf` — generates and streams the pre-filled PDF for download.
-  * Mount `/outputs` for audio/PDF downloads and `/` to `static/`.
+  * `POST /api/check-doc` — accepts image upload, runs `doc_guard`, returns `DocCheckResult`.
+  * `POST /api/generate-pdf` — generates the pre-filled PDF and returns its download URL.
+  * `POST /api/reset` — clears one session for a clean demo take.
+  * Mount `/outputs` for audio/PDF downloads and serve the UI at `/` from `static/`.
   * Include a `MOCK_MODE=true` path so the UI works end-to-end before Track A & Track B merge.
 * [ ] **`static/` (`index.html`, `style.css`, `app.js`):**
   * Left pane: WhatsApp-style chat bubbles, mic record button (`MediaRecorder`), text input fallback, document upload button, inline audio player, PDF download card.
-  * Right pane ("AI Inspector"): Live formatted JSON of `FormSlots`, active RAG citations, and Document Pre-Check telemetry (`blur_score`, `name_match_score`, pass/fail badge).
-* [ ] **End-to-End Verification:** Run `uv run uvicorn server:app --reload`, open `http://localhost:8000`, complete a full voice + blurry doc + clear doc + PDF download flow.
+  * Right pane ("AI Inspector"): Live formatted `FormSlots`, active RAG citations, and Document Pre-Check telemetry (`blur_score`, `name_match_score`, pass/fail badge).
+* [ ] **End-to-End Verification:** Run `uv run python main.py` (or `uv run uvicorn server:app --reload`), open `http://localhost:8000`, complete a full voice + blurry doc + clear doc + PDF download flow.
 
 ---
 
@@ -205,7 +218,7 @@ Regardless of which editor or AI assistant each teammate uses (Cursor, Copilot, 
 4. **Reusable Prompt Template (works in any AI tool):**
    ```text
    Read `schemas.py` and the Module [X] specification in `PLAN.md`.
-   Implement `[filepath]` cleanly using Python 3.11 type hints.
+   Implement `[filepath]` cleanly using Python 3.13 type hints.
    - Respect `MOCK_MODE` from `.env`.
    - Keep code concise, modular, and dependency-light.
    - Add an `if __name__ == "__main__":` block to test the module from the CLI.

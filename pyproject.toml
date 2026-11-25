@@ -1,7 +1,7 @@
 [project]
 name = "jansetu-ai"
 version = "0.1.0"
-description = "Add your description here"
+description = "Vernacular (Hindi/Awadhi/Bhojpuri) citizen-services assistant for Uttar Pradesh: voice, RAG, eligibility, document pre-check and pre-filled PDF drafts."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [

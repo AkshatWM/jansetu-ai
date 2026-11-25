@@ -94,6 +94,7 @@ def clear_session(session_id: str) -> None:
 # ---------------------------------------------------------------- uploads
 
 _SAFE_SUFFIX = re.compile(r"^\.[a-z0-9]{1,5}$")
+_SAFE_STEM = re.compile(r"[^A-Za-z0-9_-]+")
 _MIME_SUFFIX = {
     "image/jpeg": ".jpg",
     "image/png": ".png",
@@ -110,13 +111,22 @@ _MIME_SUFFIX = {
 
 
 def save_upload(upload: UploadFile, default_suffix: str = ".bin") -> Path:
-    """Copy an upload into ``outputs/uploads`` under a collision-free name."""
-    suffix = Path(upload.filename or "").suffix.lower()
+    """Copy an upload into ``outputs/uploads`` under a collision-free name.
+
+    A sanitized prefix of the original stem is kept (for debugging and for the
+    mock document extractor, which keys off names such as ``*mismatch*``); the
+    UUID guarantees uniqueness. The stem is allow-listed, so it cannot inject
+    path separators or unusual characters.
+    """
+    original = Path(upload.filename or "")
+    suffix = original.suffix.lower()
     if not _SAFE_SUFFIX.match(suffix):
         mime = (upload.content_type or "").split(";")[0].strip().lower()
         suffix = _MIME_SUFFIX.get(mime, default_suffix)
 
-    path = UPLOAD_DIR / f"{uuid.uuid4().hex}{suffix}"
+    stem = _SAFE_STEM.sub("-", original.stem).strip("-_")[:40]
+    name = f"{uuid.uuid4().hex}-{stem}" if stem else uuid.uuid4().hex
+    path = UPLOAD_DIR / f"{name}{suffix}"
     with path.open("wb") as out:
         shutil.copyfileobj(upload.file, out)
     return path
@@ -244,13 +254,17 @@ def reset(session_id: str = Form(default="demo-session")) -> dict[str, object]:
     return {"ok": True, "session_id": session_id}
 
 
-if __name__ == "__main__":
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-
+def run(host: str | None = None, port: int | None = None) -> None:
+    """Start the production-style Uvicorn server (also used by ``main.py``)."""
     import uvicorn
 
     uvicorn.run(
         app,
-        host=os.getenv("HOST", "127.0.0.1"),
-        port=int(os.getenv("PORT", "8000")),
+        host=host or os.getenv("HOST", "127.0.0.1"),
+        port=port or int(os.getenv("PORT", "8000")),
     )
+
+
+if __name__ == "__main__":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    run()

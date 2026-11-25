@@ -5,7 +5,9 @@ All modules (RAG, Voice, Agent, Vision, PDF, FastAPI) import their models from h
 
 from __future__ import annotations
 
+import sys
 from typing import Literal, Optional
+
 from pydantic import BaseModel, Field
 
 SchemeType = Literal[
@@ -132,6 +134,9 @@ class PDFGenerationResponse(BaseModel):
 # --- Quick Local Self-Test ---
 
 if __name__ == "__main__":
+    # Windows consoles default to cp1252, which cannot encode Devanagari.
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
     sample = AgentTurnResponse(
         transcript="हमका बुढ़ापा पेंशन खातिर आवेदन करे के बा, हमार नाम रामेश्वर यादव ह।",
         normalized_hindi="मुझे वृद्धावस्था पेंशन के लिए आवेदन करना है, मेरा नाम रामेश्वर यादव है।",
